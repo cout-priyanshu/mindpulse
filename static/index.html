@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MindPulse — Wellbeing Intelligence for Engineering Students</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #030712;
+      --bg-surface: #0b0f1e;
+      --bg-card: #0f152a;
+      --bg-card-hover: #161e38;
+      --border-subtle: rgba(99, 102, 241, 0.18);
+      --border-focus: rgba(129, 140, 248, 0.45);
+      --primary: #6366f1;
+      --primary-light: #818cf8;
+      --violet: #a855f7;
+      --teal: #14b8a6;
+      --teal-light: #2dd4bf;
+      --amber: #f59e0b;
+      --amber-light: #fbbf24;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+    }
+
+    a, button {
+      font-family: inherit;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-base);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(99, 102, 241, 0.3);
+      border-radius: 9999px;
+    }
+
+    /* Utility Classes */
+    .container {
+      max-width: 1200px;
+      margin-left: auto;
+      margin-right: auto;
+      padding-left: 1.25rem;
+      padding-right: 1.25rem;
+    }
+
+    .glass-card {
+      background: rgba(15, 21, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 1rem;
+    }
+
+    .pulse-glow {
+      box-shadow: 0 0 25px -5px rgba(99, 102, 241, 0.25);
+    }
+
+    .badge-attention {
+      background: rgba(245, 158, 11, 0.12);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .badge-balanced {
+      background: rgba(20, 184, 166, 0.12);
+      color: #2dd4bf;
+      border: 1px solid rgba(20, 184, 166, 0.3);
+    }
+
+    .badge-watchful {
+      background: rgba(168, 85, 247, 0.12);
+      color: #c084fc;
+      border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+
+    /* Subtle Animated Pulse Waveform */
+    @keyframes pulseDash {
+      0% { stroke-dashoffset: 800; }
+      100% { stroke-dashoffset: 0; }
+    }
+
+    .waveform-path {
+      stroke-dasharray: 800;
+      animation: pulseDash 6s linear infinite;
+    }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.85);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: #0f172a;
+      border: 1px solid var(--border-focus);
+      color: #fff;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.75rem;
+      font-size: 0.8125rem;
+      z-index: 999;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      animation: slideUp 0.25s ease-out;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(12px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    // --- State Store ---
+    const state = {
+      user: null,
+      role: null,
+      token: localStorage.getItem('mindpulse_token') || null,
+      activeScenario: 'demanding',
+      currentPage: 'landing', // 'landing', 'onboarding', 'dashboard', 'checkin', 'support', 'privacy', 'institution', 'login'
+      summary: null,
+      timeline: null,
+      eveningPlan: null,
+      consent: null,
+      institutionInsights: null,
+      simulateLowSample: false,
+      toast: null,
+      breathingOpen: false,
+      deleteModalOpen: false,
+      loading: false
+    };
+
+    function showToast(msg) {
+      state.toast = msg;
+      render();
+      setTimeout(() => {
+        if (state.toast === msg) {
+          state.toast = null;
+          render();
+        }
+      }, 4000);
+    }
+
+    // --- API Client ---
+    const API = {
+      async request(endpoint, options = {}) {
+        const headers = {
+          'Content-Type': 'application/json',
+          ...(state.token ? { 'Authorization': `Bearer ${state.token}` } : {}),
+          ...options.headers
+        };
+        try {
+          const res = await fetch(endpoint, { ...options, headers });
+          if (res.status === 401 && state.token) {
+            localStorage.removeItem('mindpulse_token');
+            state.token = null;
+            state.user = null;
+            state.role = null;
+            state.currentPage = 'landing';
+            render();
+            throw new Error("Session expired. Please sign in again.");
+          }
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: 'Network request failed' }));
+            throw new Error(err.detail || 'Request failed');
+          }
+          return res.json();
+        } catch (e) {
+          console.error(`API Error on ${endpoint}:`, e);
+          throw e;
+        }
+      },
+
+      login(email, password) {
+        return this.request('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password })
+        });
+      },
+
+      getWellbeingSummary() {
+        return this.request('/api/wellbeing/summary');
+      },
+
+      getTimeline() {
+        return this.request('/api/wellbeing/timeline');
+      },
+
+      submitCheckIn(data) {
+        return this.request('/api/checkins', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+      },
+
+      getConsent() {
+        return this.request('/api/consent');
+      },
+
+      updateConsent(data) {
+        return this.request('/api/consent', {
+          method: 'PUT',
+          body: JSON.stringify(data)
+        });
+      },
+
+      getEveningPlan() {
+        return this.request('/api/support/lighter-evening');
+      },
+
+      deferTask(taskId) {
+        return this.request('/api/support/lighter-evening/defer', {
+          method: 'POST',
+          body: JSON.stringify({ task_id: taskId, new_target_day: 'Friday evening' })
+        });
+      },
+
+      resetEveningPlan() {
+        return this.request('/api/support/lighter-evening/reset', { method: 'POST' });
+      },
+
+      logSupportAction(type, details = {}) {
+        return this.request('/api/support/actions', {
+          method: 'POST',
+          body: JSON.stringify({ action_type: type, details })
+        });
+      },
+
+      getInstitutionInsights(simulateLow) {
+        return this.request(`/api/institution/insights?simulate_low_sample=${simulateLow}`);
+      },
+
+      switchScenario(scen) {
+        return this.request('/api/demo/scenario', {
+          method: 'POST',
+          body: JSON.stringify({ scenario: scen })
+        });
+      },
+
+      deletePersonalData() {
+        return this.request('/api/users/me/data', { method: 'DELETE' });
+      },
+
+      exportPersonalData() {
+        return this.request('/api/users/me/export');
+      }
+    };
+
+    // --- App Lifecycle Handlers ---
+    async function init() {
+      if (state.token) {
+        try {
+          const me = await API.request('/api/users/me');
+          state.user = me;
+          state.role = me.role;
+          state.currentPage = me.role === 'institution_admin' ? 'institution' : 'dashboard';
+          await refreshStudentData();
+        } catch (e) {
+          state.token = null;
+          state.currentPage = 'landing';
+        }
+      }
+      render();
+    }
+
+    async function refreshStudentData() {
+      if (!state.token || state.role !== 'student') return;
+      try {
+        const [sum, time, consent, plan] = await Promise.all([
+          API.getWellbeingSummary(),
+          API.getTimeline(),
+          API.getConsent(),
+          API.getEveningPlan()
+        ]);
+        state.summary = sum;
+        state.timeline = time;
+        state.consent = consent;
+        state.eveningPlan = plan;
+        state.activeScenario = sum.active_scenario || state.activeScenario;
+      } catch (e) {
+        console.error("Failed to load student data", e);
+      }
+    }
+
+    async function handleLogin(email, password) {
+      state.loading = true;
+      render();
+      try {
+        const res = await API.login(email, password);
+        state.token = res.access_token;
+        localStorage.setItem('mindpulse_token', res.access_token);
+        state.user = { id: res.user_id, full_name: res.full_name, email: res.email, role: res.role };
+        state.role = res.role;
+        showToast(`Signed in as ${res.full_name}`);
+        if (res.role === 'institution_admin') {
+          state.currentPage = 'institution';
+          await refreshAdminData();
+        } else {
+          state.currentPage = 'dashboard';
+          await refreshStudentData();
+        }
+      } catch (err) {
+        alert(err.message || 'Login failed');
+      } finally {
+        state.loading = false;
+        render();
+      }
+    }
+
+    async function refreshAdminData() {
+      if (!state.token || state.role !== 'institution_admin') return;
+      try {
+        state.institutionInsights = await API.getInstitutionInsights(state.simulateLowSample);
+      } catch (e) {
+        console.error("Failed to load admin insights", e);
+      }
+    }
+
+    async function handleToggleScenario(newScen) {
+      state.activeScenario = newScen;
+      try {
+        await API.switchScenario(newScen);
+        await refreshStudentData();
+        showToast(newScen === 'demanding' ? 'Demanding week loaded: Aarav’s pressure pattern active' : 'Balanced week loaded: Stable routine active');
+      } catch (e) {
+        console.error(e);
+      }
+      render();
+    }
+
+    function handleLogout() {
+      localStorage.removeItem('mindpulse_token');
+      state.token = null;
+      state.user = null;
+      state.role = null;
+      state.currentPage = 'landing';
+      showToast('Signed out securely');
+      render();
+    }
+
+    // --- HTML Renderers ---
+    function renderSafetyBanner() {
+      return `
+        <div style="background: rgba(15, 23, 42, 0.95); border-bottom: 1px solid rgba(99, 102, 241, 0.2); padding: 0.5rem 1rem; font-size: 0.75rem; color: #cbd5e1;">
+          <div class="container" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f59e0b;"></span>
+              <span><strong style="color: #fff;">Safe support notice:</strong> If you feel unsafe or need immediate help, contact local emergency services or a trusted person now.</span>
+            </div>
+            <div style="display: flex; gap: 0.75rem; color: #94a3b8; font-size: 0.6875rem;">
+              <span>Non-diagnostic</span>
+              <span>•</span>
+              <span>Zero faculty surveillance</span>
+              <span>•</span>
+              <span>Student-controlled</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderNavbar() {
+      const isStudent = state.user && state.role === 'student';
+      const isAdmin = state.user && state.role === 'institution_admin';
+
+      return `
+        <header style="background: rgba(3, 7, 18, 0.85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border-subtle); position: sticky; top: 0; z-index: 50;">
+          <div class="container" style="height: 4rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+            <!-- Brand -->
+            <div onclick="state.currentPage = state.user ? (state.role === 'institution_admin' ? 'institution' : 'dashboard') : 'landing'; render();" style="display: flex; items-center; gap: 0.75rem; cursor: pointer;">
+              <div style="width: 2.25rem; height: 2.25rem; border-radius: 0.625rem; background: linear-gradient(135deg, #6366f1, #a855f7, #14b8a6); padding: 1px; display: flex; align-items: center; justify-content: center;">
+                <div style="width: 100%; height: 100%; background: #030712; border-radius: 0.5625rem; display: flex; align-items: center; justify-content: center; color: #2dd4bf;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                </div>
+              </div>
+              <div>
+                <div style="display: flex; align-items: center; gap: 0.375rem;">
+                  <span style="font-weight: 800; font-size: 1.05rem; letter-spacing: -0.02em; color: #fff;">MindPulse</span>
+                  <span style="font-size: 0.625rem; padding: 0.125rem 0.375rem; border-radius: 9999px; background: rgba(99, 102, 241, 0.2); color: #818cf8; font-family: monospace;">v1.0</span>
+                </div>
+                <span style="font-size: 0.6875rem; color: #94a3b8; display: block;">Understand your rhythm. Protect your balance.</span>
+              </div>
+            </div>
+
+            <!-- Demo Mode Switcher -->
+            ${isStudent ? `
+              <div style="display: flex; align-items: center; background: rgba(15, 23, 42, 0.9); border: 1px solid var(--border-subtle); border-radius: 9999px; padding: 0.25rem; font-size: 0.75rem;">
+                <span style="padding: 0 0.5rem; font-size: 0.6875rem; font-weight: 600; color: #94a3b8;">Demo Mode:</span>
+                <button onclick="handleToggleScenario('balanced')" style="padding: 0.25rem 0.75rem; border-radius: 9999px; border: none; font-size: 0.6875rem; font-weight: 600; cursor: pointer; transition: all 0.2s; ${state.activeScenario === 'balanced' ? 'background: #14b8a6; color: #030712;' : 'background: transparent; color: #94a3b8;'}">
+                  Balanced Week
+                </button>
+                <button onclick="handleToggleScenario('demanding')" style="padding: 0.25rem 0.75rem; border-radius: 9999px; border: none; font-size: 0.6875rem; font-weight: 600; cursor: pointer; transition: all 0.2s; ${state.activeScenario === 'demanding' ? 'background: #f59e0b; color: #030712;' : 'background: transparent; color: #94a3b8;'}">
+                  Demanding Week (Aarav)
+                </button>
+              </div>
+            ` : ''}
+
+            <!-- Navigation Links -->
+            <nav style="display: flex; align-items: center; gap: 0.5rem;">
+              ${state.user ? `
+                ${isStudent ? `
+                  <button onclick="state.currentPage = 'dashboard'; render();" style="padding: 0.375rem 0.75rem; border-radius: 0.5rem; border: none; font-size: 0.75rem; font-weight: 500; cursor: pointer; color: ${state.currentPage === 'dashboard' ? '#fff' : '#94a3b8'}; background: ${state.currentPage === 'dashboard' ? 'rgba(99, 102, 241, 0.2)' : 'transparent'};">Dashboard</button>
+                  <button onclick="state.currentPage = 'checkin'; render();" style="padding: 0.375rem 0.75rem; border-radius: 0.5rem; border: none; font-size: 0.75rem; font-weight: 500; cursor: pointer; color: ${state.currentPage === 'checkin' ? '#fff' : '#94a3b8'}; background: ${state.currentPage === 'checkin' ? 'rgba(99, 102, 241, 0.2)' : 'transparent'};">Check-in</button>
+                  <button onclick="state.currentPage = 'support'; render();" style="padding: 0.375rem 0.75rem; border-radius: 0.5rem; border: none; font-size: 0.75rem; font-weight: 500; cursor: pointer; color: ${state.currentPage === 'support' ? '#fff' : '#94a3b8'}; background: ${state.currentPage === 'support' ? 'rgba(99, 102, 241, 0.2)' : 'transparent'};">Support Plan</button>
+                  <button onclick="state.currentPage = 'privacy'; render();" style="padding: 0.375rem 0.75rem; border-radius: 0.5rem; border: none; font-size: 0.75rem; font-weight: 500; cursor: pointer; color: ${state.currentPage === 'privacy' ? '#fff' : '#94a3b8'}; background: ${state.currentPage === 'privacy' ? 'rgba(99, 102, 241, 0.2)' : 'transparent'};">Privacy Center</button>
+                ` : `
+                  <button onclick="state.currentPage = 'institution'; render();" style="padding: 0.375rem 0.75rem; border-radius: 0.5rem; border: none; font-size: 0.75rem; font-weight: 500; cursor: pointer; color: #fff; background: rgba(168, 85, 247, 0.2);">Cohort Insights</button>
+                `}
+                <div style="border-left: 1px solid var(--border-subtle); padding-left: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+                  <span style="font-size: 0.75rem; color: #cbd5e1;">${state.user.full_name}</span>
+                  <button onclick="handleLogout()" title="Sign out" style="background: none; border: none; color: #94a3b8; cursor: pointer; padding: 0.25rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                  </button>
+                </div>
+              ` : `
+                <button onclick="state.currentPage = 'login'; render();" style="padding: 0.4rem 1rem; border-radius: 0.5rem; border: 1px solid var(--border-subtle); background: transparent; color: #e2e8f0; font-size: 0.75rem; font-weight: 600; cursor: pointer;">Sign In</button>
+                <button onclick="state.currentPage = 'onboarding'; render();" style="padding: 0.45rem 1.1rem; border-radius: 0.5rem; border: none; background: linear-gradient(135deg, #6366f1, #a855f7); color: #fff; font-size: 0.75rem; font-weight: 600; cursor: pointer; box-shadow: 0 4px 15px -3px rgba(99, 102, 241, 0.4);">Start Private Check-in</button>
+              `}
+            </nav>
+          </div>
+        </header>
+      `;
+    }
+
+    function renderWaveformSVG() {
+      return `
+        <svg viewBox="0 0 800 90" fill="none" style="width: 100%; height: 60px; max-width: 580px; margin: 0 auto; display: block;">
+          <defs>
+            <linearGradient id="waveLine" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#818cf8" stop-opacity="0.1" />
+              <stop offset="35%" stop-color="#a855f7" stop-opacity="0.7" />
+              <stop offset="50%" stop-color="#2dd4bf" stop-opacity="0.9" />
+              <stop offset="65%" stop-color="#f59e0b" stop-opacity="0.6" />
+              <stop offset="100%" stop-color="#818cf8" stop-opacity="0.1" />
+            </linearGradient>
+          </defs>
+          <path class="waveform-path" d="M0,45 L180,45 L210,45 L225,15 L240,75 L255,25 L270,60 L285,45 L480,45 L500,25 L520,65 L540,45 L800,45" stroke="url(#waveLine)" stroke-width="2.5" fill="none" />
+        </svg>
+      `;
+    }
+
+    function renderLandingPage() {
+      return `
+        <div class="container" style="padding-top: 4rem; padding-bottom: 5rem; text-align: center;">
+          <div style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.85rem; border-radius: 9999px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.25); color: #818cf8; font-size: 0.75rem; margin-bottom: 1.5rem;">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: #2dd4bf;"></span>
+            <span>Privacy-First Wellbeing Intelligence for Engineering Students</span>
+          </div>
+
+          <h1 style="font-size: 3rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; max-width: 800px; margin: 0 auto 1.5rem auto; color: #fff;">
+            Your wellbeing deserves attention <span style="background: linear-gradient(135deg, #818cf8, #c084fc, #2dd4bf); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">before it becomes overwhelming.</span>
+          </h1>
+
+          <p style="font-size: 1.05rem; color: #94a3b8; max-width: 620px; margin: 0 auto 2rem auto; line-height: 1.6;">
+            MindPulse helps students recognise routine changes, regain balance, and choose support on their own terms.
+          </p>
+
+          ${renderWaveformSVG()}
+
+          <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap; margin-top: 2rem;">
+            <button onclick="state.currentPage = 'onboarding'; render();" style="padding: 0.75rem 1.75rem; border-radius: 0.75rem; border: none; background: linear-gradient(135deg, #6366f1, #a855f7, #14b8a6); color: #fff; font-size: 0.875rem; font-weight: 700; cursor: pointer; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.4);">
+              Start private check-in →
+            </button>
+            <button onclick="handleLogin('aarav@mindpulse.demo', 'AaravPulse2026!')" style="padding: 0.75rem 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-focus); background: rgba(15, 23, 42, 0.8); color: #e2e8f0; font-size: 0.875rem; font-weight: 600; cursor: pointer;">
+              Explore Aarav’s demo week
+            </button>
+            <button onclick="state.currentPage = 'privacy'; render();" style="padding: 0.75rem 1.25rem; border: none; background: transparent; color: #94a3b8; font-size: 0.875rem; font-weight: 500; cursor: pointer;">
+              Explore how privacy works
+            </button>
+          </div>
+
+          <!-- Trust Statement -->
+          <div style="margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid rgba(99, 102, 241, 0.12); display: flex; align-items: center; justify-content: center; gap: 1.5rem; flex-wrap: wrap; font-size: 0.8125rem; color: #cbd5e1;">
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              <span style="color: #2dd4bf;">✔</span>
+              <strong style="color: #fff;">Private by default</strong>
+            </div>
+            <span>•</span>
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              <span style="color: #818cf8;">✔</span>
+              <strong style="color: #fff;">Non-diagnostic</strong>
+            </div>
+            <span>•</span>
+            <div style="display: flex; align-items: center; gap: 0.375rem;">
+              <span style="color: #c084fc;">✔</span>
+              <strong style="color: #fff;">Student controlled</strong>
+            </div>
+          </div>
+
+          <!-- Product Preview Card -->
+          <div class="glass-card" style="margin-top: 3rem; max-width: 820px; margin-left: auto; margin-right: auto; padding: 2rem; text-align: left;">
+            <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 1rem; margin-bottom: 1.5rem;">
+              <span style="font-size: 0.75rem; color: #94a3b8; font-family: monospace;">Student Wellbeing Signal • Fall 2026</span>
+              <span class="badge-attention" style="padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">Needs attention</span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; align-items: center;">
+              <div>
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #f59e0b; text-transform: uppercase; letter-spacing: 0.05em;">Support Signal</span>
+                <h3 style="font-size: 1.35rem; font-weight: 700; color: #fff; margin: 0.25rem 0 0.5rem 0;">“Your routine has shifted recently”</h3>
+                <p style="font-size: 0.8125rem; color: #94a3b8; line-height: 1.6;">
+                  A few changes in deadlines, late-night study, and energy check-ins suggest that a small reset may help.
+                </p>
+                <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                  <span style="padding: 0.25rem 0.5rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-subtle); border-radius: 0.375rem; font-size: 0.6875rem; color: #cbd5e1;">2 delayed assignments</span>
+                  <span style="padding: 0.25rem 0.5rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-subtle); border-radius: 0.375rem; font-size: 0.6875rem; color: #cbd5e1;">Late night study increased</span>
+                </div>
+              </div>
+
+              <div style="background: rgba(3, 7, 18, 0.6); border: 1px solid var(--border-subtle); border-radius: 0.75rem; padding: 1.25rem;">
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">Today's Next Small Step</span>
+                <p style="font-size: 0.8125rem; font-weight: 600; color: #fff; margin-top: 0.35rem;">
+                  Choose one task to defer and protect 30 minutes for recovery.
+                </p>
+                <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border-subtle); font-size: 0.75rem; color: #94a3b8; display: flex; align-items: center; justify-content: space-between;">
+                  <span>2-min breathing reset</span>
+                  <span style="color: #2dd4bf;">Optional</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderOnboardingPage() {
+      return `
+        <div class="container" style="max-width: 800px; padding-top: 3rem; padding-bottom: 5rem;">
+          <div style="text-align: center; margin-bottom: 2rem;">
+            <span style="display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; background: rgba(20, 184, 166, 0.1); color: #2dd4bf; font-size: 0.75rem; font-weight: 600; margin-bottom: 0.75rem;">
+              Consent-First Experience
+            </span>
+            <h2 style="font-size: 2rem; font-weight: 800; color: #fff; letter-spacing: -0.02em;">
+              You decide what MindPulse observes
+            </h2>
+            <p style="font-size: 0.875rem; color: #94a3b8; max-width: 540px; margin: 0.5rem auto 0 auto;">
+              Before collecting or displaying any personal pattern, configure your permissions below. You can revoke consent anytime.
+            </p>
+          </div>
+
+          <!-- Mandatory Copy Box -->
+          <div class="glass-card" style="padding: 1.25rem; text-align: center; border-color: rgba(99, 102, 241, 0.3); margin-bottom: 2rem; background: rgba(99, 102, 241, 0.08);">
+            <p style="font-size: 0.9375rem; font-weight: 600; color: #e2e8f0;">
+              “Your detailed wellbeing data belongs to you. It is never visible to faculty, peers, or administrators.”
+            </p>
+          </div>
+
+          <!-- Permission Cards -->
+          <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem;">
+            <div class="glass-card" style="padding: 1.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+              <div>
+                <h4 style="font-size: 0.9375rem; font-weight: 700; color: #fff;">Assignment and Deadline Patterns</h4>
+                <p style="font-size: 0.75rem; color: #cbd5e1; margin-top: 0.25rem;"><strong style="color: #fff;">What is collected:</strong> Due dates and submission timestamps from your courses.</p>
+                <p style="font-size: 0.75rem; color: #94a3b8;"><strong style="color: #cbd5e1;">Why it helps:</strong> Detects clustered deadlines before submission strain compounds.</p>
+                <p style="font-size: 0.6875rem; color: #2dd4bf; margin-top: 0.25rem;">Private to student • Can be revoked anytime</p>
+              </div>
+              <input type="checkbox" checked style="width: 1.5rem; height: 1.5rem; accent-color: #14b8a6; cursor: pointer;">
+            </div>
+
+            <div class="glass-card" style="padding: 1.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+              <div>
+                <h4 style="font-size: 0.9375rem; font-weight: 700; color: #fff;">Study-Routine Consistency</h4>
+                <p style="font-size: 0.75rem; color: #cbd5e1; margin-top: 0.25rem;"><strong style="color: #fff;">What is collected:</strong> Late-night study activity past midnight compared against your typical rhythm.</p>
+                <p style="font-size: 0.75rem; color: #94a3b8;"><strong style="color: #cbd5e1;">Why it helps:</strong> Surfaces irregular sleep-study cycles so you can choose when to rest.</p>
+                <p style="font-size: 0.6875rem; color: #2dd4bf; margin-top: 0.25rem;">Private to student • Can be revoked anytime</p>
+              </div>
+              <input type="checkbox" checked style="width: 1.5rem; height: 1.5rem; accent-color: #14b8a6; cursor: pointer;">
+            </div>
+
+            <div class="glass-card" style="padding: 1.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+              <div>
+                <h4 style="font-size: 0.9375rem; font-weight: 700; color: #fff;">Optional Daily Mood and Energy Check-ins</h4>
+                <p style="font-size: 0.75rem; color: #cbd5e1; margin-top: 0.25rem;"><strong style="color: #fff;">What is collected:</strong> 15-second self-reported energy ratings and workload feelings.</p>
+                <p style="font-size: 0.75rem; color: #94a3b8;"><strong style="color: #cbd5e1;">Why it helps:</strong> Gives you an objective picture of your energy reserves across the semester.</p>
+                <p style="font-size: 0.6875rem; color: #2dd4bf; margin-top: 0.25rem;">Private to student • Can be revoked anytime</p>
+              </div>
+              <input type="checkbox" checked style="width: 1.5rem; height: 1.5rem; accent-color: #14b8a6; cursor: pointer;">
+            </div>
+          </div>
+
+          <!-- Privacy Architecture Diagram -->
+          <div class="glass-card" style="padding: 1.5rem; margin-bottom: 2rem;">
+            <h4 style="font-size: 0.875rem; font-weight: 700; color: #fff; text-align: center; margin-bottom: 1.25rem;">Privacy Architecture: Local Vault vs Cohort Aggregates</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+              <div style="background: rgba(20, 184, 166, 0.08); border: 1px solid rgba(20, 184, 166, 0.25); border-radius: 0.75rem; padding: 1rem;">
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">Private Student Account</span>
+                <p style="font-size: 0.75rem; color: #fff; margin-top: 0.35rem; font-weight: 600;">Detailed Wellbeing Vault</p>
+                <ul style="font-size: 0.6875rem; color: #94a3b8; margin-top: 0.5rem; padding-left: 1rem; line-height: 1.6;">
+                  <li>Assignment names & due dates</li>
+                  <li>Late-night study hours</li>
+                  <li>Daily energy check-ins</li>
+                  <li>Personal reflection notes</li>
+                </ul>
+              </div>
+
+              <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid var(--border-subtle); border-radius: 0.75rem; padding: 1rem; text-align: center; display: flex; flex-direction: column; justify-content: center;">
+                <span style="font-size: 0.75rem; font-weight: 700; color: #818cf8;">Differential Privacy Filter</span>
+                <p style="font-size: 0.6875rem; color: #94a3b8; margin-top: 0.35rem;">
+                  Noise injection • Minimum cohort k ≥ 10 • All names and IDs permanently excluded
+                </p>
+              </div>
+
+              <div style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 0.75rem; padding: 1rem;">
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #c084fc; text-transform: uppercase;">Faculty & Dean Portal</span>
+                <p style="font-size: 0.75rem; color: #fff; margin-top: 0.35rem; font-weight: 600;">Anonymised Cohort Trends</p>
+                <ul style="font-size: 0.6875rem; color: #94a3b8; margin-top: 0.5rem; padding-left: 1rem; line-height: 1.6;">
+                  <li>Aggregate workload index</li>
+                  <li>Clustered deadline warnings</li>
+                  <li>Zero student identities</li>
+                  <li>Zero surveillance tracking</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+            <button onclick="handleLogin('aarav@mindpulse.demo', 'AaravPulse2026!')" style="background: none; border: none; color: #94a3b8; font-size: 0.8125rem; cursor: pointer;">
+              Skip for now
+            </button>
+            <button onclick="handleLogin('aarav@mindpulse.demo', 'AaravPulse2026!')" style="padding: 0.75rem 1.75rem; border-radius: 0.75rem; border: none; background: linear-gradient(135deg, #6366f1, #14b8a6); color: #fff; font-size: 0.875rem; font-weight: 700; cursor: pointer;">
+              Continue with selected permissions →
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderDashboardPage() {
+      if (!state.summary || !state.timeline) {
+        return `<div class="container" style="padding-top: 5rem; text-align: center; color: #94a3b8;">Loading student rhythm...</div>`;
+      }
+
+      const sum = state.summary;
+      const isAttn = sum.trend_state === 'needs_attention';
+      const isWatch = sum.trend_state === 'watchful';
+      const badgeClass = isAttn ? 'badge-attention' : (isWatch ? 'badge-watchful' : 'badge-balanced');
+      const badgeText = isAttn ? 'Needs attention' : (isWatch ? 'Watchful' : 'Balanced');
+
+      // SVG Trend Visual Points
+      const trend = sum.seven_day_trend || [];
+      const width = 640;
+      const height = 180;
+      const pad = 30;
+      const gW = width - pad * 2;
+      const gH = height - pad * 2;
+
+      const getX = (i) => pad + (i / Math.max(1, trend.length - 1)) * gW;
+      const getYEnergy = (v) => pad + gH - ((v - 1) / 4) * gH;
+      const getYNight = (v) => pad + gH - (v / 4) * gH;
+
+      const energyPts = trend.map((d, i) => `${getX(i)},${getYEnergy(d.energy)}`).join(' ');
+      const nightPts = trend.map((d, i) => `${getX(i)},${getYNight(d.lateNightHours)}`).join(' ');
+
+      return `
+        <div class="container" style="padding-top: 2rem; padding-bottom: 5rem;">
+          <!-- Top Greeting Bar -->
+          <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 1.25rem; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">Engineering Wellbeing Rhythm</span>
+              <h2 style="font-size: 1.75rem; font-weight: 800; color: #fff; margin-top: 0.25rem;">
+                Good evening, Aarav. Let’s check in with your week.
+              </h2>
+              <p style="font-size: 0.8125rem; color: #94a3b8;">
+                A quiet space to understand your routine patterns and protect personal balance.
+              </p>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem;">
+              <button onclick="state.currentPage = 'checkin'; render();" style="padding: 0.5rem 1rem; border-radius: 0.5rem; border: 1px solid var(--border-focus); background: rgba(99, 102, 241, 0.2); color: #fff; font-size: 0.75rem; font-weight: 600; cursor: pointer;">
+                Daily Check-in
+              </button>
+              <button onclick="state.breathingOpen = true; render();" style="padding: 0.5rem 1rem; border-radius: 0.5rem; border: 1px solid rgba(20, 184, 166, 0.3); background: rgba(20, 184, 166, 0.1); color: #2dd4bf; font-size: 0.75rem; font-weight: 600; cursor: pointer;">
+                2-Min Reset
+              </button>
+            </div>
+          </div>
+
+          <!-- Main Hero Section -->
+          <div class="glass-card" style="padding: 2rem; margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1.5rem; border-bottom: 1px solid var(--border-subtle); padding-bottom: 1.5rem;">
+              <div style="max-w: 600px;">
+                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+                  <span style="font-size: 0.6875rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;">Wellbeing Trend</span>
+                  <span class="${badgeClass}" style="padding: 0.2rem 0.65rem; border-radius: 9999px; font-size: 0.6875rem; font-weight: 700;">
+                    ${badgeText}
+                  </span>
+                </div>
+                <h3 style="font-size: 1.65rem; font-weight: 800; color: #fff; margin-bottom: 0.5rem;">
+                  “${sum.status_headline}”
+                </h3>
+                <p style="font-size: 0.875rem; color: #cbd5e1; line-height: 1.6;">
+                  ${sum.status_explanation}
+                </p>
+              </div>
+
+              <!-- Today's Next Small Step -->
+              <div style="background: rgba(3, 7, 18, 0.65); border: 1px solid var(--border-focus); border-radius: 0.75rem; padding: 1rem; width: 100%; max-width: 320px;">
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">Today's Next Small Step</span>
+                <p style="font-size: 0.8125rem; font-weight: 600; color: #fff; margin: 0.35rem 0 0.75rem 0;">
+                  ${sum.today_next_step}
+                </p>
+                <button onclick="state.currentPage = 'support'; render();" style="width: 100%; padding: 0.4rem; border-radius: 0.5rem; border: 1px solid var(--border-subtle); background: rgba(99, 102, 241, 0.2); color: #c7d2fe; font-size: 0.75rem; font-weight: 600; cursor: pointer;">
+                  Explore support options →
+                </button>
+              </div>
+            </div>
+
+            <!-- 7-Day Chart Visualisation -->
+            <div style="margin-top: 1.5rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <span style="font-size: 0.75rem; font-weight: 700; color: #818cf8; text-transform: uppercase;">7-Day Activity & Energy Trajectory</span>
+                <span style="font-size: 0.6875rem; color: #94a3b8;">Cyan: Energy Check-in • Amber: Late-Night Study</span>
+              </div>
+              <div style="overflow-x: auto;">
+                <svg viewBox="0 0 ${width} ${height}" style="width: 100%; height: 180px; min-width: 480px; display: block;">
+                  <!-- Grid -->
+                  <line x1="${pad}" y1="${pad}" x2="${width-pad}" y2="${pad}" stroke="rgba(99,102,241,0.15)" stroke-dasharray="3 3"/>
+                  <line x1="${pad}" y1="${pad + gH/2}" x2="${width-pad}" y2="${pad + gH/2}" stroke="rgba(99,102,241,0.15)" stroke-dasharray="3 3"/>
+                  <line x1="${pad}" y1="${pad + gH}" x2="${width-pad}" y2="${pad + gH}" stroke="rgba(99,102,241,0.15)" stroke-dasharray="3 3"/>
+
+                  <!-- Lines -->
+                  <polyline fill="none" stroke="#2dd4bf" stroke-width="2.5" points="${energyPts}" />
+                  <polyline fill="none" stroke="#f59e0b" stroke-width="2.5" points="${nightPts}" />
+
+                  <!-- Dots -->
+                  ${trend.map((d, i) => `
+                    <circle cx="${getX(i)}" cy="${getYEnergy(d.energy)}" r="4" fill="#0f766e" stroke="#2dd4bf" stroke-width="2" />
+                    <circle cx="${getX(i)}" cy="${getYNight(d.lateNightHours)}" r="3.5" fill="#78350f" stroke="#f59e0b" stroke-width="2" />
+                    <text x="${getX(i)}" y="${height - 6}" font-size="10" fill="#94a3b8" text-anchor="middle" font-family="sans-serif">${d.day}</text>
+                  `).join('')}
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Why am I seeing this? Expandable Section -->
+          <div class="glass-card" style="padding: 1.25rem; margin-bottom: 2rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div style="display: flex; items-center; gap: 0.5rem;">
+                <span style="font-weight: 700; font-size: 0.9375rem; color: #fff;">Why am I seeing this?</span>
+                <span style="font-size: 0.75rem; color: #94a3b8;">Transparent reasoning behind your trend</span>
+              </div>
+              <span style="font-size: 0.6875rem; color: #2dd4bf; font-family: monospace;">100% Student-Private</span>
+            </div>
+            <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 0.5rem;">
+              ${sum.contributing_factors.map(f => `
+                <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: #e2e8f0;">
+                  <span style="width: 6px; height: 6px; border-radius: 50%; background: #f59e0b;"></span>
+                  <span>${f}</span>
+                </div>
+              `).join('')}
+            </div>
+            <p style="font-size: 0.6875rem; color: #64748b; margin-top: 0.75rem;">${sum.coverage_note}</p>
+          </div>
+
+          <!-- 7-Day Rhythm Timeline -->
+          <div style="margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <h3 style="font-size: 1.125rem; font-weight: 700; color: #fff;">7-Day Rhythm Timeline</h3>
+              <span style="font-size: 0.75rem; color: #94a3b8;">${state.timeline.summary_insight}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem;">
+              ${state.timeline.days.map(d => `
+                <div class="glass-card" style="padding: 1rem; border-color: ${d.trend_marker === 'shift' ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-subtle)'}; background: ${d.trend_marker === 'shift' ? 'rgba(245, 158, 11, 0.05)' : 'rgba(15, 21, 42, 0.75)'};">
+                  <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.5rem;">
+                    <strong style="color: #fff;">${d.day_label}</strong>
+                    <span style="color: #94a3b8; font-size: 0.6875rem;">${d.date}</span>
+                  </div>
+                  ${d.deadline_event ? `
+                    <div style="margin-bottom: 0.5rem;">
+                      <span style="font-size: 0.625rem; padding: 0.1rem 0.35rem; border-radius: 9999px; ${d.deadline_status === 'delayed' || d.deadline_status === 'missed' ? 'background: rgba(245, 158, 11, 0.2); color: #fbbf24;' : 'background: rgba(20, 184, 166, 0.2); color: #2dd4bf;'}">
+                        ${d.deadline_status === 'delayed' ? 'Delayed' : (d.deadline_status === 'missed' ? 'Missed' : 'On track')}
+                      </span>
+                      <p style="font-size: 0.6875rem; color: #cbd5e1; margin-top: 0.25rem; line-height: 1.3;">${d.deadline_event}</p>
+                    </div>
+                  ` : ''}
+                  <div style="font-size: 0.6875rem; color: #94a3b8; line-height: 1.5; border-top: 1px solid var(--border-subtle); padding-top: 0.5rem;">
+                    <div>Consistency: <strong style="color: #fff;">${d.study_consistency_pct}%</strong></div>
+                    <div>Past midnight: <strong style="color: ${d.late_night_hours > 1.5 ? '#fbbf24' : '#cbd5e1'};">${d.late_night_hours}h</strong></div>
+                  </div>
+                  <p style="font-size: 0.625rem; color: #94a3b8; font-style: italic; margin-top: 0.5rem;">${d.gentle_note}</p>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderDailyCheckInPage() {
+      return `
+        <div class="container" style="max-width: 600px; padding-top: 3rem; padding-bottom: 5rem;">
+          <div style="text-align: center; margin-bottom: 2rem;">
+            <span style="display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; background: rgba(20, 184, 166, 0.1); color: #2dd4bf; font-size: 0.75rem; font-weight: 600; margin-bottom: 0.5rem;">15-Second Daily Check-in</span>
+            <h2 style="font-size: 1.75rem; font-weight: 800; color: #fff;">How is your day unfolding?</h2>
+            <p style="font-size: 0.8125rem; color: #94a3b8;">Private to your account. No grades, no judgment, and no faculty notifications.</p>
+          </div>
+
+          <form onsubmit="handleCheckInSubmit(event)" class="glass-card" style="padding: 2rem;">
+            <!-- Question 1 -->
+            <div style="margin-bottom: 1.75rem;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <label style="font-size: 0.875rem; font-weight: 700; color: #fff;">How is your energy today?</label>
+                <span style="font-size: 0.6875rem; color: #94a3b8;">1 (Low) to 5 (High)</span>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem;">
+                ${[1, 2, 3, 4, 5].map(v => `
+                  <label style="display: block; text-align: center; border: 1px solid var(--border-subtle); padding: 0.5rem; border-radius: 0.5rem; cursor: pointer;">
+                    <input type="radio" name="energy_level" value="${v}" ${v === 2 ? 'checked' : ''} style="accent-color: #2dd4bf;">
+                    <span style="display: block; font-size: 0.75rem; font-weight: 700; color: #fff; margin-top: 0.25rem;">${v}</span>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Question 2 -->
+            <div style="margin-bottom: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border-subtle);">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <label style="font-size: 0.875rem; font-weight: 700; color: #fff;">How manageable does your workload feel?</label>
+                <span style="font-size: 0.6875rem; color: #94a3b8;">1 (Comfortable) to 5 (Heavy)</span>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem;">
+                ${[1, 2, 3, 4, 5].map(v => `
+                  <label style="display: block; text-align: center; border: 1px solid var(--border-subtle); padding: 0.5rem; border-radius: 0.5rem; cursor: pointer;">
+                    <input type="radio" name="workload_score" value="${v}" ${v === 4 ? 'checked' : ''} style="accent-color: #a855f7;">
+                    <span style="display: block; font-size: 0.75rem; font-weight: 700; color: #fff; margin-top: 0.25rem;">${v}</span>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Question 3 -->
+            <div style="margin-bottom: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border-subtle);">
+              <label style="display: block; font-size: 0.875rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem;">Would support feel useful today?</label>
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+                <label style="border: 1px solid var(--border-subtle); padding: 0.5rem; border-radius: 0.5rem; text-align: center; font-size: 0.75rem; color: #cbd5e1; cursor: pointer;">
+                  <input type="radio" name="support_helpful" value="no" style="accent-color: #6366f1;"> No thanks
+                </label>
+                <label style="border: 1px solid var(--border-subtle); padding: 0.5rem; border-radius: 0.5rem; text-align: center; font-size: 0.75rem; color: #cbd5e1; cursor: pointer;">
+                  <input type="radio" name="support_helpful" value="maybe" style="accent-color: #6366f1;"> Maybe later
+                </label>
+                <label style="border: 1px solid var(--border-subtle); padding: 0.5rem; border-radius: 0.5rem; text-align: center; font-size: 0.75rem; color: #cbd5e1; cursor: pointer;">
+                  <input type="radio" name="support_helpful" value="yes" checked style="accent-color: #6366f1;"> A reset would help
+                </label>
+              </div>
+            </div>
+
+            <!-- Optional Reflection -->
+            <div style="margin-bottom: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border-subtle);">
+              <label style="display: block; font-size: 0.75rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.35rem;">Optional Private Reflection</label>
+              <textarea name="reflection_note" rows="2" placeholder="e.g., Two labs due Thursday; staying up past 2 AM to catch up..." style="width: 100%; background: #030712; border: 1px solid var(--border-subtle); border-radius: 0.5rem; color: #fff; padding: 0.75rem; font-size: 0.75rem; font-family: inherit; resize: none;"></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <button type="button" onclick="state.currentPage = 'dashboard'; render();" style="background: none; border: none; color: #94a3b8; font-size: 0.75rem; cursor: pointer;">Skip for today</button>
+              <button type="submit" style="padding: 0.65rem 1.5rem; border-radius: 0.5rem; border: none; background: linear-gradient(135deg, #6366f1, #14b8a6); color: #fff; font-size: 0.75rem; font-weight: 700; cursor: pointer;">
+                Save check-in →
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    async function handleCheckInSubmit(e) {
+      e.preventDefault();
+      const form = e.target;
+      const energy_level = parseInt(form.energy_level.value, 10);
+      const workload_score = parseInt(form.workload_score.value, 10);
+      const support_helpful = form.support_helpful.value;
+      const reflection_note = form.reflection_note.value;
+
+      try {
+        const res = await API.submitCheckIn({ energy_level, workload_score, support_helpful, reflection_note });
+        showToast(res.micro_message || "Thank you for checking in.");
+        await refreshStudentData();
+        state.currentPage = 'dashboard';
+        render();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function renderSupportPlanPage() {
+      const plan = state.eveningPlan || { tasks: [], current_workload_hours: 4.0, relief_hours: 0, feedback_message: "" };
+
+      return `
+        <div class="container" style="padding-top: 2rem; padding-bottom: 5rem;">
+          <div style="border-bottom: 1px solid var(--border-subtle); padding-bottom: 1.25rem; margin-bottom: 2rem;">
+            <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">Adaptive & Gentle</span>
+            <h2 style="font-size: 1.75rem; font-weight: 800; color: #fff; margin-top: 0.25rem;">Personal Support Plan</h2>
+            <p style="font-size: 0.8125rem; color: #94a3b8;">When routine demands cluster, small student-controlled steps protect your balance. Every tool below is completely optional.</p>
+          </div>
+
+          <!-- Build a Lighter Evening Planner -->
+          <div class="glass-card" style="padding: 1.75rem; margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
+              <div>
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">Student Control</span>
+                <h3 style="font-size: 1.25rem; font-weight: 800; color: #fff;">Build a Lighter Evening</h3>
+                <p style="font-size: 0.75rem; color: #94a3b8;">Defer one non-urgent item to protect 45-60 minutes for recovery tonight.</p>
+              </div>
+              <div style="background: rgba(3, 7, 18, 0.8); border: 1px solid var(--border-subtle); border-radius: 0.5rem; padding: 0.5rem 1rem; display: flex; gap: 1rem; font-size: 0.75rem;">
+                <div>
+                  <span style="color: #94a3b8; display: block; font-size: 0.6875rem;">Tonight's Load</span>
+                  <strong style="color: #fff; font-size: 1rem;">${plan.current_workload_hours}h</strong>
+                </div>
+                ${plan.relief_hours > 0 ? `
+                  <div style="border-left: 1px solid var(--border-subtle); padding-left: 1rem;">
+                    <span style="color: #2dd4bf; display: block; font-size: 0.6875rem;">Relief Gained</span>
+                    <strong style="color: #2dd4bf; font-size: 1rem;">+${plan.relief_hours}h</strong>
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+
+            <!-- Task List -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
+              ${plan.tasks.map(t => `
+                <div style="background: rgba(3, 7, 18, 0.6); border: 1px solid ${t.deferred ? 'rgba(99,102,241,0.1)' : 'var(--border-subtle)'}; border-radius: 0.75rem; padding: 1rem; opacity: ${t.deferred ? '0.5' : '1'};">
+                  <div style="display: flex; justify-content: space-between; font-size: 0.6875rem; color: #818cf8; margin-bottom: 0.25rem;">
+                    <span>${t.course}</span>
+                    <span>${t.estimated_minutes}m</span>
+                  </div>
+                  <h4 style="font-size: 0.875rem; font-weight: 700; color: #fff; text-decoration: ${t.deferred ? 'line-through' : 'none'};">${t.title}</h4>
+                  <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
+                    <span style="color: ${t.is_urgent ? '#f59e0b' : '#94a3b8'}; font-size: 0.6875rem;">
+                      ${t.is_urgent ? 'Due tomorrow' : 'Flexible deadline'}
+                    </span>
+                    ${t.deferred ? `
+                      <span style="color: #2dd4bf; font-size: 0.6875rem;">Deferred to later this week</span>
+                    ` : (
+                      !t.is_urgent ? `
+                        <button onclick="handleDeferTask('${t.id}')" style="padding: 0.25rem 0.65rem; border-radius: 0.375rem; border: 1px solid var(--border-focus); background: rgba(99, 102, 241, 0.2); color: #c7d2fe; font-size: 0.6875rem; font-weight: 600; cursor: pointer;">
+                          Defer to later →
+                        </button>
+                      ` : ''
+                    )}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+
+            <div style="margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between; font-size: 0.75rem; color: #94a3b8;">
+              <span>${plan.feedback_message}</span>
+              ${plan.relief_hours > 0 ? `<button onclick="handleResetEvening()" style="background: none; border: none; color: #818cf8; font-size: 0.6875rem; cursor: pointer;">Reset tasks</button>` : ''}
+            </div>
+          </div>
+
+          <!-- Support Cards -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+            <!-- Guided Breathing -->
+            <div class="glass-card" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">2 Minutes • Self-Paced</span>
+                <h3 style="font-size: 1.125rem; font-weight: 800; color: #fff; margin: 0.25rem 0 0.5rem 0;">Guided Breathing Reset</h3>
+                <p style="font-size: 0.75rem; color: #cbd5e1; line-height: 1.6;">
+                  Box breathing cycle (4s in, 4s hold, 4s out, 4s hold) to downshift autonomic tension before sleep or study.
+                </p>
+              </div>
+              <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle);">
+                <p style="font-size: 0.625rem; color: #64748b; font-family: monospace; margin-bottom: 0.75rem;">
+                  Optional • You choose what happens next • No action is shared without your consent
+                </p>
+                <button onclick="state.breathingOpen = true; render();" style="width: 100%; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--border-focus); background: rgba(99, 102, 241, 0.25); color: #fff; font-size: 0.75rem; font-weight: 600; cursor: pointer;">
+                  Launch breathing reset
+                </button>
+              </div>
+            </div>
+
+            <!-- Anonymous Peer Support -->
+            <div class="glass-card" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #c084fc; text-transform: uppercase;">Shared Experience</span>
+                <h3 style="font-size: 1.125rem; font-weight: 800; color: #fff; margin: 0.25rem 0 0.5rem 0;">Anonymous Peer Support</h3>
+                <p style="font-size: 0.75rem; color: #cbd5e1; line-height: 1.6;">
+                  Connect with an upper-year engineering student mentor who navigated the exact same course crunch.
+                </p>
+              </div>
+              <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle);">
+                <p style="font-size: 0.625rem; color: #64748b; font-family: monospace; margin-bottom: 0.75rem;">
+                  Optional • You choose what happens next • No action is shared without your consent
+                </p>
+                <button onclick="handleActionRequest('anonymous_peer_support')" style="width: 100%; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid rgba(168, 85, 247, 0.3); background: rgba(168, 85, 247, 0.15); color: #e9d5ff; font-size: 0.75rem; font-weight: 600; cursor: pointer;">
+                  Request anonymous mentor
+                </button>
+              </div>
+            </div>
+
+            <!-- Confidential Counselling -->
+            <div class="glass-card" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #818cf8; text-transform: uppercase;">Professional Resource</span>
+                <h3 style="font-size: 1.125rem; font-weight: 800; color: #fff; margin: 0.25rem 0 0.5rem 0;">Confidential Counselling</h3>
+                <p style="font-size: 0.75rem; color: #cbd5e1; line-height: 1.6;">
+                  Schedule a private consultation with campus student counselling. Zero reports or logs are shared with your department.
+                </p>
+              </div>
+              <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle);">
+                <p style="font-size: 0.625rem; color: #64748b; font-family: monospace; margin-bottom: 0.75rem;">
+                  Optional • You choose what happens next • No action is shared without your consent
+                </p>
+                <button onclick="handleActionRequest('confidential_counselling')" style="width: 100%; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--border-focus); background: rgba(99, 102, 241, 0.25); color: #fff; font-size: 0.75rem; font-weight: 600; cursor: pointer;">
+                  Request confidential consult
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function handleDeferTask(id) {
+      try {
+        const updated = await API.deferTask(id);
+        state.eveningPlan = updated;
+        showToast("Task deferred to Friday. Tonight's workload hours reduced.");
+        render();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function handleResetEvening() {
+      try {
+        state.eveningPlan = await API.resetEveningPlan();
+        render();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function handleActionRequest(type) {
+      try {
+        const res = await API.logSupportAction(type);
+        showToast(res.confirmation_message);
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    function renderPrivacyCenterPage() {
+      const c = state.consent || { track_academic_deadlines: true, track_study_routine: true, track_daily_checkins: true };
+
+      return `
+        <div class="container" style="max-width: 800px; padding-top: 2rem; padding-bottom: 5rem;">
+          <div style="border-bottom: 1px solid var(--border-subtle); padding-bottom: 1.25rem; margin-bottom: 2rem;">
+            <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">Radical Privacy Sovereignty</span>
+            <h2 style="font-size: 1.75rem; font-weight: 800; color: #fff; margin-top: 0.25rem;">Your Data, Your Control</h2>
+            <p style="font-size: 0.8125rem; color: #94a3b8;">MindPulse is engineered from the ground up as a private sanctuary. You maintain complete ownership of every marker collected.</p>
+          </div>
+
+          <!-- Non-Negotiable Institutional Guarantee -->
+          <div class="glass-card" style="padding: 1.25rem; border-color: rgba(20, 184, 166, 0.3); background: rgba(20, 184, 166, 0.05); margin-bottom: 2rem;">
+            <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">Non-Negotiable Guarantee</span>
+            <p style="font-size: 1rem; font-weight: 700; color: #fff; margin-top: 0.25rem;">
+              “MindPulse does not provide individual wellbeing data to your institution.”
+            </p>
+            <p style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem;">
+              Faculty, academic committees, and campus administrators only receive anonymised, cohort-level aggregates when at least 10 consenting students exist.
+            </p>
+          </div>
+
+          <!-- Active Observation Categories -->
+          <h3 style="font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 1rem;">Active Observation Categories</h3>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 2rem;">
+            <div class="glass-card" style="padding: 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="color: #fff; font-size: 0.875rem;">Assignment & Deadline Patterns</strong>
+                <p style="font-size: 0.75rem; color: #94a3b8;">Observes upcoming due dates to detect workload clusters before deadlines pass.</p>
+                <span style="font-size: 0.6875rem; color: #64748b;">Consent active since August 2026</span>
+              </div>
+              <button onclick="handleConsentToggle('track_academic_deadlines')" style="padding: 0.35rem 0.75rem; border-radius: 9999px; border: none; font-size: 0.6875rem; font-weight: 700; cursor: pointer; ${c.track_academic_deadlines ? 'background: #14b8a6; color: #030712;' : 'background: #334155; color: #cbd5e1;'}">
+                ${c.track_academic_deadlines ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+
+            <div class="glass-card" style="padding: 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="color: #fff; font-size: 0.875rem;">Study-Routine Consistency</strong>
+                <p style="font-size: 0.75rem; color: #94a3b8;">Observes late-night study activity past midnight compared against your typical baseline.</p>
+                <span style="font-size: 0.6875rem; color: #64748b;">Consent active since August 2026</span>
+              </div>
+              <button onclick="handleConsentToggle('track_study_routine')" style="padding: 0.35rem 0.75rem; border-radius: 9999px; border: none; font-size: 0.6875rem; font-weight: 700; cursor: pointer; ${c.track_study_routine ? 'background: #14b8a6; color: #030712;' : 'background: #334155; color: #cbd5e1;'}">
+                ${c.track_study_routine ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+
+            <div class="glass-card" style="padding: 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="color: #fff; font-size: 0.875rem;">Daily Energy & Workload Check-ins</strong>
+                <p style="font-size: 0.75rem; color: #94a3b8;">Captures 15-second ratings to calibrate personal trend baselines.</p>
+                <span style="font-size: 0.6875rem; color: #64748b;">Consent active since August 2026</span>
+              </div>
+              <button onclick="handleConsentToggle('track_daily_checkins')" style="padding: 0.35rem 0.75rem; border-radius: 9999px; border: none; font-size: 0.6875rem; font-weight: 700; cursor: pointer; ${c.track_daily_checkins ? 'background: #14b8a6; color: #030712;' : 'background: #334155; color: #cbd5e1;'}">
+                ${c.track_daily_checkins ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+          </div>
+
+          <!-- Data Sovereignty Actions -->
+          <div class="glass-card" style="padding: 1.5rem;">
+            <h4 style="font-size: 0.875rem; font-weight: 700; color: #fff; margin-bottom: 1rem; text-transform: uppercase;">Data Sovereignty Actions</h4>
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+              <button onclick="handleExportData()" style="padding: 0.65rem 1.25rem; border-radius: 0.5rem; border: 1px solid var(--border-focus); background: rgba(99, 102, 241, 0.2); color: #fff; font-size: 0.75rem; font-weight: 600; cursor: pointer;">
+                Download personal wellbeing summary (JSON)
+              </button>
+              <button onclick="state.deleteModalOpen = true; render();" style="padding: 0.65rem 1.25rem; border-radius: 0.5rem; border: 1px solid rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.1); color: #f87171; font-size: 0.75rem; font-weight: 600; cursor: pointer;">
+                Delete personal data
+              </button>
+            </div>
+            <p style="font-size: 0.6875rem; color: #64748b; margin-top: 1rem;">Data retention: Personal check-ins and routine markers are stored for 90 days then automatically purged.</p>
+          </div>
+        </div>
+      `;
+    }
+
+    async function handleConsentToggle(key) {
+      if (!state.consent) return;
+      const current = state.consent[key];
+      try {
+        state.consent = await API.updateConsent({ [key]: !current });
+        showToast(`Privacy category updated.`);
+        await refreshStudentData();
+        render();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function handleExportData() {
+      try {
+        const data = await API.exportPersonalData();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `mindpulse-wellbeing-summary.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast("Downloaded personal wellbeing JSON export.");
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function handleConfirmDelete() {
+      try {
+        await API.deletePersonalData();
+        state.deleteModalOpen = false;
+        showToast("Personal data permanently deleted.");
+        handleLogout();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    function renderInstitutionInsightsPage() {
+      if (state.role !== 'institution_admin') {
+        return `
+          <div class="container" style="max-width: 600px; padding-top: 5rem; text-align: center;">
+            <h3 style="font-size: 1.5rem; font-weight: 800; color: #fff; margin-bottom: 0.5rem;">Administrator Access Required</h3>
+            <p style="font-size: 0.8125rem; color: #94a3b8; margin-bottom: 1.5rem;">This portal provides aggregated, anonymised cohort-level patterns for curriculum planners. Individual student records cannot be inspected.</p>
+            <button onclick="handleLogin('admin@mindpulse.demo', 'PulseAdmin2026!')" style="padding: 0.65rem 1.5rem; border-radius: 0.5rem; border: none; background: #a855f7; color: #fff; font-size: 0.75rem; font-weight: 700; cursor: pointer;">
+              Switch to Institution Admin (Dean Eleanor Vance)
+            </button>
+          </div>
+        `;
+      }
+
+      const ins = state.institutionInsights;
+      if (!ins) {
+        return `<div class="container" style="padding-top: 5rem; text-align: center; color: #94a3b8;">Loading anonymised cohort intelligence...</div>`;
+      }
+
+      return `
+        <div class="container" style="padding-top: 2rem; padding-bottom: 5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle); padding-bottom: 1.25rem; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <span style="font-size: 0.6875rem; font-weight: 700; color: #c084fc; text-transform: uppercase;">Faculty & Academic Leadership Portal</span>
+              <h2 style="font-size: 1.75rem; font-weight: 800; color: #fff; margin-top: 0.25rem;">Cohort Wellbeing & Workload Intelligence</h2>
+              <p style="font-size: 0.8125rem; color: #94a3b8;">Responsible institutional analytics designed for structural course pacing—not student surveillance.</p>
+            </div>
+
+            <div style="background: rgba(15, 23, 42, 0.9); border: 1px solid var(--border-subtle); border-radius: 0.5rem; padding: 0.5rem 0.75rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+              <span style="color: #94a3b8;">Simulate low sample (&lt;10):</span>
+              <button onclick="toggleLowSample()" style="padding: 0.25rem 0.5rem; border-radius: 0.25rem; border: none; font-size: 0.6875rem; font-weight: 600; cursor: pointer; ${state.simulateLowSample ? 'background: #f59e0b; color: #030712;' : 'background: #334155; color: #fff;'}">
+                ${state.simulateLowSample ? 'Active (Sample: 5)' : 'Normal (Sample: 48)'}
+              </button>
+            </div>
+          </div>
+
+          <!-- Privacy Label Badge -->
+          <div class="glass-card" style="padding: 1rem 1.25rem; border-color: rgba(168, 85, 247, 0.3); background: rgba(168, 85, 247, 0.08); display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <div style="font-size: 0.75rem; color: #e9d5ff;">
+              <strong style="color: #fff;">${ins.privacy_label}</strong> Minimum cohort threshold: ${ins.minimum_threshold_required} students.
+            </div>
+            <span style="font-size: 0.6875rem; font-family: monospace; color: #c084fc;">Cohort Sample: ${ins.sample_size} students</span>
+          </div>
+
+          ${!ins.is_safe_to_display ? `
+            <!-- Low Cohort Privacy Threshold Warning -->
+            <div class="glass-card" style="padding: 3rem; text-align: center; border-color: rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.05);">
+              <h3 style="font-size: 1.25rem; font-weight: 800; color: #fbbf24; margin-bottom: 0.5rem;">${ins.pressure_headline}</h3>
+              <p style="font-size: 0.8125rem; color: #cbd5e1; max-width: 500px; margin: 0 auto;">${ins.suggested_institutional_response}</p>
+              <p style="font-size: 0.6875rem; color: #94a3b8; margin-top: 1rem;">Privacy rule active: Differential privacy safeguards prevent identification in small classes.</p>
+            </div>
+          ` : `
+            <!-- Real Cohort Insights -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+              <div class="glass-card" style="padding: 1.5rem;">
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #f59e0b; text-transform: uppercase;">Cohort Pressure Pattern</span>
+                <h4 style="font-size: 1.125rem; font-weight: 700; color: #fff; margin-top: 0.25rem;">${ins.pressure_headline}</h4>
+                <p style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.5rem;">Department of Computer Engineering • Year 2 Core</p>
+              </div>
+
+              <div class="glass-card" style="padding: 1.5rem;">
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #2dd4bf; text-transform: uppercase;">Top Pressure Signal</span>
+                <h4 style="font-size: 1.125rem; font-weight: 700; color: #2dd4bf; margin-top: 0.25rem;">${ins.top_pressure_signal}</h4>
+                <p style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.5rem;">Multiple course deadlines clustered within a 48-hour window.</p>
+              </div>
+
+              <div class="glass-card" style="padding: 1.5rem;">
+                <span style="font-size: 0.6875rem; font-weight: 700; color: #c084fc; text-transform: uppercase;">Suggested Institutional Response</span>
+                <p style="font-size: 0.8125rem; font-weight: 600; color: #fff; margin-top: 0.25rem;">${ins.suggested_institutional_response}</p>
+              </div>
+            </div>
+
+            <!-- Weekly Workload Bar Visualisation -->
+            <div class="glass-card" style="padding: 2rem; margin-bottom: 2rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h4 style="font-size: 0.875rem; font-weight: 700; color: #fff;">Anonymous Aggregate Workload Index by Week</h4>
+                <span style="font-size: 0.6875rem; color: #94a3b8;">1 (Light) to 5 (Heavy)</span>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; align-items: flex-end; height: 160px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 0.5rem;">
+                ${ins.weekly_trends.map((item, idx) => {
+                  const h = Math.round((item.avg_workload_index / 5) * 120);
+                  const isCur = idx === ins.weekly_trends.length - 1;
+                  return `
+                    <div style="text-align: center;">
+                      <span style="font-size: 0.75rem; font-weight: 700; color: #fff; display: block; margin-bottom: 0.25rem;">${item.avg_workload_index.toFixed(1)}</span>
+                      <div style="height: ${h}px; width: 40px; margin: 0 auto; border-radius: 0.375rem 0.375rem 0 0; background: ${isCur ? 'linear-gradient(to top, #f59e0b, #fbbf24)' : 'linear-gradient(to top, #6366f1, #a855f7)'};"></div>
+                      <span style="font-size: 0.6875rem; color: ${isCur ? '#fbbf24' : '#94a3b8'}; display: block; margin-top: 0.5rem;">${item.week_label}</span>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <div style="text-align: center; font-size: 0.75rem; color: #64748b; font-style: italic;">
+              ${ins.disclaimer}
+            </div>
+          `}
+        </div>
+      `;
+    }
+
+    async function toggleLowSample() {
+      state.simulateLowSample = !state.simulateLowSample;
+      await refreshAdminData();
+      render();
+    }
+
+    function renderLoginPage() {
+      return `
+        <div class="container" style="max-width: 440px; padding-top: 4rem; padding-bottom: 5rem;">
+          <div class="glass-card" style="padding: 2.25rem;">
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+              <h2 style="font-size: 1.5rem; font-weight: 800; color: #fff;">Sign In to MindPulse</h2>
+              <p style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem;">Confidential student wellbeing intelligence</p>
+            </div>
+
+            <!-- Quick Demo Credentials -->
+            <div style="margin-bottom: 1.5rem;">
+              <span style="display: block; font-size: 0.6875rem; font-weight: 700; color: #818cf8; text-transform: uppercase; margin-bottom: 0.5rem; text-align: center;">One-Click Hackathon Logins</span>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                <button type="button" onclick="handleLogin('aarav@mindpulse.demo', 'AaravPulse2026!')" style="padding: 0.65rem; border-radius: 0.5rem; border: 1px solid var(--border-focus); background: rgba(99, 102, 241, 0.15); text-align: left; cursor: pointer;">
+                  <strong style="display: block; font-size: 0.75rem; color: #fff;">Student Demo</strong>
+                  <span style="display: block; font-size: 0.6875rem; color: #2dd4bf;">Aarav Sharma</span>
+                </button>
+                <button type="button" onclick="handleLogin('admin@mindpulse.demo', 'PulseAdmin2026!')" style="padding: 0.65rem; border-radius: 0.5rem; border: 1px solid rgba(168, 85, 247, 0.3); background: rgba(168, 85, 247, 0.15); text-align: left; cursor: pointer;">
+                  <strong style="display: block; font-size: 0.75rem; color: #fff;">Admin Demo</strong>
+                  <span style="display: block; font-size: 0.6875rem; color: #c084fc;">Dean Eleanor Vance</span>
+                </button>
+              </div>
+            </div>
+
+            <form onsubmit="handleCustomLogin(event)" style="display: flex; flex-direction: column; gap: 1rem;">
+              <div>
+                <label style="display: block; font-size: 0.75rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem;">Email Address</label>
+                <input type="email" name="email" value="aarav@mindpulse.demo" required style="width: 100%; background: #030712; border: 1px solid var(--border-subtle); border-radius: 0.5rem; padding: 0.65rem; color: #fff; font-size: 0.8125rem;">
+              </div>
+              <div>
+                <label style="display: block; font-size: 0.75rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.25rem;">Password</label>
+                <input type="password" name="password" value="AaravPulse2026!" required style="width: 100%; background: #030712; border: 1px solid var(--border-subtle); border-radius: 0.5rem; padding: 0.65rem; color: #fff; font-size: 0.8125rem;">
+              </div>
+              <button type="submit" style="padding: 0.75rem; border-radius: 0.5rem; border: none; background: linear-gradient(135deg, #6366f1, #14b8a6); color: #fff; font-size: 0.8125rem; font-weight: 700; cursor: pointer; margin-top: 0.5rem;">
+                Sign In →
+              </button>
+            </form>
+          </div>
+        </div>
+      `;
+    }
+
+    async function handleCustomLogin(e) {
+      e.preventDefault();
+      const email = e.target.email.value;
+      const pass = e.target.password.value;
+      await handleLogin(email, pass);
+    }
+
+    function renderBreathingModal() {
+      if (!state.breathingOpen) return '';
+
+      return `
+        <div class="modal-backdrop">
+          <div class="glass-card" style="max-width: 440px; width: 100%; padding: 2rem; text-align: center; position: relative;">
+            <button onclick="state.breathingOpen = false; render();" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: #94a3b8; font-size: 1.25rem; cursor: pointer;">✕</button>
+
+            <span style="display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; background: rgba(20, 184, 166, 0.1); color: #2dd4bf; font-size: 0.6875rem; font-weight: 700; text-transform: uppercase;">
+              2-Minute Box Breathing Reset
+            </span>
+
+            <h3 style="font-size: 1.5rem; font-weight: 800; color: #fff; margin: 0.5rem 0 0.25rem 0;">Rhythm Reset</h3>
+            <p style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 2rem;">Follow the gentle expanding circle to slow down autonomic activation.</p>
+
+            <!-- Animated Visual Breathing Circle -->
+            <div style="width: 140px; height: 140px; border-radius: 50%; border: 3px solid #2dd4bf; margin: 0 auto 2rem auto; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(20, 184, 166, 0.1); animation: breatheScale 16s ease-in-out infinite;">
+              <span style="font-size: 1.75rem; font-weight: 700; color: #fff; font-family: monospace;">4s</span>
+              <span style="font-size: 0.6875rem; color: #2dd4bf; font-weight: 600; text-transform: uppercase;">Inhale / Hold</span>
+            </div>
+
+            <style>
+              @keyframes breatheScale {
+                0%, 100% { transform: scale(0.9); opacity: 0.5; }
+                25%, 50% { transform: scale(1.15); opacity: 1; }
+                75% { transform: scale(0.95); opacity: 0.7; }
+              }
+            </style>
+
+            <button onclick="state.breathingOpen = false; showToast('Breathing reset completed.'); render();" style="padding: 0.65rem 1.5rem; border-radius: 0.5rem; border: none; background: #6366f1; color: #fff; font-size: 0.75rem; font-weight: 700; cursor: pointer;">
+              Complete & Return
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderDeleteModal() {
+      if (!state.deleteModalOpen) return '';
+
+      return `
+        <div class="modal-backdrop">
+          <div class="glass-card" style="max-width: 420px; width: 100%; padding: 2rem; text-align: center; border-color: rgba(239, 68, 68, 0.4);">
+            <h3 style="font-size: 1.25rem; font-weight: 800; color: #f87171; margin-bottom: 0.5rem;">Permanently Delete Personal Data?</h3>
+            <p style="font-size: 0.75rem; color: #cbd5e1; line-height: 1.6; margin-bottom: 1.5rem;">
+              This will irreversibly purge all personal check-in logs, timeline markers, and support interactions from MindPulse servers.
+            </p>
+            <div style="display: flex; justify-content: center; gap: 0.75rem;">
+              <button onclick="state.deleteModalOpen = false; render();" style="padding: 0.5rem 1rem; border-radius: 0.5rem; border: 1px solid var(--border-subtle); background: transparent; color: #cbd5e1; font-size: 0.75rem; cursor: pointer;">Cancel</button>
+              <button onclick="handleConfirmDelete()" style="padding: 0.5rem 1rem; border-radius: 0.5rem; border: none; background: #dc2626; color: #fff; font-size: 0.75rem; font-weight: 700; cursor: pointer;">Yes, Purge My Data</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderFooter() {
+      return `
+        <footer style="margin-top: auto; border-top: 1px solid rgba(99, 102, 241, 0.12); padding: 2rem 1rem; text-align: center; font-size: 0.75rem; color: #64748b;">
+          <div class="container">
+            <p>MindPulse is a non-diagnostic wellbeing intelligence platform for engineering students.</p>
+            <p style="font-size: 0.6875rem; color: #475569; margin-top: 0.25rem;">Private by default • Non-diagnostic • Student controlled • Never shared with faculty</p>
+          </div>
+        </footer>
+      `;
+    }
+
+    function render() {
+      const app = document.getElementById('app');
+      let pageContent = '';
+
+      switch (state.currentPage) {
+        case 'landing': pageContent = renderLandingPage(); break;
+        case 'onboarding': pageContent = renderOnboardingPage(); break;
+        case 'dashboard': pageContent = renderDashboardPage(); break;
+        case 'checkin': pageContent = renderDailyCheckInPage(); break;
+        case 'support': pageContent = renderSupportPlanPage(); break;
+        case 'privacy': pageContent = renderPrivacyCenterPage(); break;
+        case 'institution': pageContent = renderInstitutionInsightsPage(); break;
+        case 'login': pageContent = renderLoginPage(); break;
+        default: pageContent = renderLandingPage();
+      }
+
+      app.innerHTML = `
+        ${renderSafetyBanner()}
+        ${renderNavbar()}
+        <main style="flex: 1;">
+          ${pageContent}
+        </main>
+        ${renderFooter()}
+        ${renderBreathingModal()}
+        ${renderDeleteModal()}
+        ${state.toast ? `<div class="toast"><span style="width:6px;height:6px;border-radius:50%;background:#2dd4bf;"></span>${state.toast}</div>` : ''}
+      `;
+    }
+
+    // Initialize application
+    init();
+  </script>
+</body>
+</html>
