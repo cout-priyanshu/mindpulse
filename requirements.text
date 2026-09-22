@@ -1,1 +1,7 @@
-pip freeze > requirements.txt
+fastapi
+uvicorn
+pydantic
+requests
+python-jose
+passlib
+bcrypt
