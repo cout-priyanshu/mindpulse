@@ -1,3 +1,4 @@
+from app.seed import seed_database
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,14 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+@app.on_event("startup")
+def startup_event():
+    try:
+        seed_database()
+        print("Database initialized and seeded successfully.")
+    except Exception as e:
+        print("Database seeding error:", e)
 
 app.add_middleware(
     CORSMiddleware,
