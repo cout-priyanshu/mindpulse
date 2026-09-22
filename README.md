@@ -58,47 +58,8 @@ mindpulse/
 
 ---
 
-## 3. Quickstart & Setup Commands
 
-### Prerequisites
-- Python 3.9+
-- Node.js 18+ (for frontend TypeScript development)
-
-### Step 1: Run the Backend & Full Application
-The backend serves both the REST API (with OpenAPI documentation at `/docs`) and the frontend web application at the root URL `/`.
-
-```bash
-# Set PYTHONPATH and run the server
-export PYTHONPATH=backend_app
-python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Or execute the provided shell script:
-```bash
-./run_backend.sh
-```
-
-- **Web Application**: Visit `http://localhost:8000/` in any browser.
-- **Interactive OpenAPI Documentation**: Visit `http://localhost:8000/docs`.
-
-### Step 2: Run the Automated Backend Test Suite
-```bash
-./run_tests.sh
-# or:
-PYTHONPATH=backend_app python3 backend_app/tests/test_api.py
-```
-*All 9 test cases cover JWT authentication, RBAC, consent updates, wellbeing engine evaluation, scenario switching, daily check-ins, workload deferral, institution privacy thresholds, and personal data exports.*
-
-### Step 3: Frontend Development (Optional for customization)
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
----
-
-## 4. Demo Accounts & Credentials
+## 3. Demo Accounts & Credentials
 
 | Role | Name | Email | Password | Access Scope |
 |---|---|---|---|---|
@@ -109,7 +70,7 @@ npm run dev
 
 ---
 
-## 5. Explainable Wellbeing Engine & Demo Scenarios
+## 4. Explainable Wellbeing Engine & Demo Scenarios
 
 MindPulse includes an instantaneous **Demo Mode** switch in the top navigation bar:
 
@@ -128,7 +89,7 @@ MindPulse includes an instantaneous **Demo Mode** switch in the top navigation b
 
 ---
 
-## 6. Institution Insights & Privacy Thresholds
+## 5. Institution Insights & Privacy Thresholds
 
 - **Role-Based Access Control**: Student accounts receive a `403 Forbidden` if attempting to query `/api/institution/*`.
 - **k-Anonymity Threshold**: The institution dashboard enforces a minimum sample size (`MIN_ANONYMOUS_COHORT_SIZE = 10`).
@@ -137,7 +98,7 @@ MindPulse includes an instantaneous **Demo Mode** switch in the top navigation b
 
 ---
 
-## 7. 90-Second Hackathon Pitch Demo Script
+## 6. 90-Second Hackathon Pitch Demo Script
 
 **Target Time: 90 Seconds**  
 **Presenter Flow:**
