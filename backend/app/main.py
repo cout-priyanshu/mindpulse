@@ -1,10 +1,20 @@
-from app.seed import seed_database
+import sys
 import os
+
+# Ensure backend and root paths are in sys.path
+backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+root_dir = os.path.abspath(os.path.join(backend_dir, ".."))
+
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+from app.seed import seed_database
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-
 from app.config import settings
 from app.routers import auth, users, consent, checkins, academic_events, wellbeing, support, institution, demo
 
