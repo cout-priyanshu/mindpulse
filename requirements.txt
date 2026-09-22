@@ -1,0 +1,8 @@
+cryptography
+fastapi
+uvicorn
+pydantic
+requests
+python-jose
+passlib
+bcrypt
