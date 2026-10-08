@@ -1,4 +1,4 @@
-# MindPulse
+.# MindPulse
 
 > **“Understand your rhythm. Protect your balance.”**  
 > *A privacy-first wellbeing intelligence platform for engineering students.*
